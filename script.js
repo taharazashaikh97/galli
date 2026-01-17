@@ -7,15 +7,13 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 document.body.appendChild(renderer.domElement);
 
-// --- 2. CELESTIAL SYSTEM (Sun & Moon) ---
+// --- 2. CELESTIAL SYSTEM ---
 const celestialGroup = new THREE.Group();
 scene.add(celestialGroup);
 
 const sunDisk = new THREE.Mesh(new THREE.SphereGeometry(15, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffdf00 }));
 const sunLight = new THREE.DirectionalLight(0xffffff, 1);
 sunLight.castShadow = true;
-sunLight.shadow.camera.left = -150; sunLight.shadow.camera.right = 150;
-sunLight.shadow.camera.top = 150; sunLight.shadow.camera.bottom = -150;
 sunDisk.add(sunLight);
 celestialGroup.add(sunDisk);
 
@@ -27,24 +25,42 @@ celestialGroup.add(moonDisk);
 const ambient = new THREE.AmbientLight(0x404040, 0.5);
 scene.add(ambient);
 
-// --- 3. TIME & LIGHTING ---
+// --- 3. TIME CONTROL LOGIC ---
 const dayDurationSeconds = 15 * 60; 
 const daySpeed = (Math.PI * 2) / (dayDurationSeconds * 60); 
-let time = 0; 
+let time = Math.PI / 2; // START AT MID-DAY (90 degrees)
 const orbitRadius = 900;
 
+const timeSlider = document.getElementById('time-slider');
+const timeLabel = document.getElementById('time-label');
+
 function updateLighting() {
-    time += daySpeed;
+    // If user is touching the slider, use slider value. Otherwise, auto-increment.
+    if (document.activeElement === timeSlider) {
+        time = parseFloat(timeSlider.value);
+    } else {
+        time += daySpeed;
+        if (time > Math.PI * 2) time -= Math.PI * 2;
+        timeSlider.value = time;
+    }
+
     sunDisk.position.set(Math.cos(time) * orbitRadius, Math.sin(time) * orbitRadius, -100);
     moonDisk.position.set(Math.cos(time + Math.PI) * orbitRadius, Math.sin(time + Math.PI) * orbitRadius, -100);
+    
     const sunY = sunDisk.position.y;
     const lerpFactor = THREE.MathUtils.clamp((sunY + 100) / 400, 0, 1);
     scene.background = new THREE.Color().lerpColors(new THREE.Color(0x020205), new THREE.Color(0x87ceeb), lerpFactor);
     sunLight.intensity = lerpFactor;
+
+    // UI Label logic
+    if (sunY > 150) timeLabel.innerText = "Mid-day";
+    else if (sunY > 0) timeLabel.innerText = "Sunrise/Sunset";
+    else timeLabel.innerText = "Night";
+
     return sunY > 0;
 }
 
-// --- 4. PLAYER & STABLE FLASHLIGHT ---
+// --- 4. PLAYER & FLASHLIGHT ---
 const player = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshLambertMaterial({ color: 0xe63946 }));
 player.castShadow = true;
 scene.add(player);
@@ -58,11 +74,9 @@ player.add(flashlight); player.add(lightTarget);
 flashlight.target = lightTarget;
 flashlight.visible = false;
 
-// --- 5. FORESTS & WATER ASSETS ---
+// --- 5. FORESTS & WATER ---
 const waterLevel = -1.5;
-const waterMat = new THREE.MeshStandardMaterial({ 
-    color: 0x0077be, transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0.5 
-});
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x0077be, transparent: true, opacity: 0.6 });
 
 function createTree(x, y, z) {
     const treeGroup = new THREE.Group();
@@ -75,7 +89,7 @@ function createTree(x, y, z) {
     return treeGroup;
 }
 
-// --- 6. INFINITE TERRAIN ENGINE ---
+// --- 6. TERRAIN ---
 const terrainGroup = new THREE.Group();
 scene.add(terrainGroup);
 const chunks = new Map();
@@ -86,8 +100,7 @@ function createChunk(x, z) {
     const key = `${x},${z}`;
     if (chunks.has(key)) return;
     const chunkGroup = new THREE.Group();
-    
-    const geo = new THREE.PlaneGeometry(chunkSize, chunkSize, 20, 20);
+    const geo = new THREE.PlaneGeometry(chunkSize, chunkSize, 15, 15);
     const v = geo.attributes.position.array;
     for (let i = 0; i < v.length; i += 3) {
         v[i + 2] = getHeight(v[i] + (x * chunkSize), -(v[i + 1] - (z * chunkSize)));
@@ -103,7 +116,7 @@ function createChunk(x, z) {
     water.position.y = waterLevel;
     chunkGroup.add(water);
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 8; i++) {
         const tx = (Math.random() - 0.5) * chunkSize;
         const tz = (Math.random() - 0.5) * chunkSize;
         const ty = getHeight(tx + (x * chunkSize), tz + (z * chunkSize));
@@ -115,7 +128,7 @@ function createChunk(x, z) {
     chunks.set(key, chunkGroup);
 }
 
-// --- 7. SYSTEMS & CONTROLS ---
+// --- 7. CONTROLS & PHYSICS ---
 let batteryLevel = 100, lastTime = performance.now(), frameCount = 0;
 let velocityY = 0, canJump = false, pitch = 0, yaw = 0;
 const keys = { w: false, a: false, s: false, d: false, space: false };
@@ -130,11 +143,14 @@ window.addEventListener('keyup', (e) => {
     keys[e.key.toLowerCase()] = false;
 });
 
-document.addEventListener('click', () => renderer.domElement.requestPointerLock());
+document.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'INPUT') renderer.domElement.requestPointerLock();
+});
+
 document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === renderer.domElement) {
         yaw -= e.movementX * 0.002; pitch -= e.movementY * 0.002;
-        pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch)); 
+        pitch = THREE.MathUtils.clamp(pitch, -Math.PI/3, Math.PI/3);
         player.rotation.y = yaw;
     }
 });
@@ -144,61 +160,46 @@ const raycaster = new THREE.Raycaster();
 function animate() {
     requestAnimationFrame(animate);
 
-    // FPS & Battery
+    // FPS
     frameCount++;
     const now = performance.now();
     if (now >= lastTime + 1000) {
-        const fpsElem = document.getElementById('fps-counter');
-        if(fpsElem) fpsElem.innerText = `FPS: ${frameCount}`;
+        document.getElementById('fps-counter').innerText = `FPS: ${frameCount}`;
         frameCount = 0; lastTime = now;
     }
+
+    // Systems
     const isDay = updateLighting();
     if (flashlight.visible) batteryLevel -= 0.08;
     else if (isDay && batteryLevel < 100) batteryLevel += 0.04;
-    
-    batteryLevel = Math.max(0, Math.min(100, batteryLevel));
-    const barElem = document.getElementById('battery-bar');
-    if(barElem) barElem.style.width = batteryLevel + '%';
+    batteryLevel = THREE.MathUtils.clamp(batteryLevel, 0, 100);
+    document.getElementById('battery-bar').style.width = batteryLevel + '%';
     if (batteryLevel <= 0) flashlight.visible = false;
 
-    // Movement & Swimming
-    const isSwimming = player.position.y < waterLevel + 1.2;
-    const speed = isSwimming ? 0.3 : 0.7;
+    // Movement
+    const speed = player.position.y < waterLevel + 1.2 ? 0.3 : 0.7;
     if (keys.w) { player.position.x -= Math.sin(yaw) * speed; player.position.z -= Math.cos(yaw) * speed; }
     if (keys.s) { player.position.x += Math.sin(yaw) * speed; player.position.z += Math.cos(yaw) * speed; }
     if (keys.a) { player.position.x -= Math.cos(yaw) * speed; player.position.z += Math.sin(yaw) * speed; }
     if (keys.d) { player.position.x += Math.cos(yaw) * speed; player.position.z -= Math.sin(yaw) * speed; }
 
-    // FIXED JUMP: Only jump if Space is pressed AND player is on ground
-    if (keys.space && canJump) {
-        velocityY = 0.5;
-        canJump = false; // Disable jumping until we hit ground again
-    }
+    if (keys.space && canJump) { velocityY = 0.5; canJump = false; }
+    velocityY -= 0.02; player.position.y += velocityY;
 
-    velocityY -= 0.02; // Gravity
-    player.position.y += velocityY;
-
-    // Grounding Collision
+    // Collision
     raycaster.set(new THREE.Vector3(player.position.x, player.position.y + 5, player.position.z), new THREE.Vector3(0, -1, 0));
     const hits = raycaster.intersectObjects(terrainGroup.children, true);
-    
-    // Find the actual terrain surface
     const groundHit = hits.find(h => h.object.material.color && h.object.material.color.getHex() === 0x348C31);
-    
     if (groundHit) {
         const groundY = groundHit.point.y + 1.5;
-        if (player.position.y <= groundY) {
-            player.position.y = groundY;
-            velocityY = 0;
-            canJump = true; // Landed, can jump again
-        }
+        if (player.position.y <= groundY) { player.position.y = groundY; velocityY = 0; canJump = true; }
     }
 
-    // Load Chunks
+    // Chunks
     const pX = Math.round(player.position.x / chunkSize), pZ = Math.round(player.position.z / chunkSize);
     for (let x = pX - 2; x <= pX + 2; x++) for (let z = pZ - 2; z <= pZ + 2; z++) createChunk(x, z);
 
-    // Camera follow
+    // Camera
     const camOffset = new THREE.Vector3(0, 5, 12).applyQuaternion(player.quaternion);
     camera.position.copy(player.position).add(camOffset);
     camera.lookAt(player.position.x, player.position.y + pitch * 5, player.position.z);

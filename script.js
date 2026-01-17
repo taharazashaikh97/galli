@@ -7,10 +7,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 document.body.appendChild(renderer.domElement);
 
-// --- 2. 15-MINUTE DAY/NIGHT CYCLE (Starting at Morning) ---
+// --- 2. 15-MINUTE DAY/NIGHT CYCLE (Start: Morning) ---
 const dayDurationSeconds = 15 * 60; 
 const daySpeed = (Math.PI * 2) / (dayDurationSeconds * 60); 
-let time = 0; // 0 = Sun rising (Morning)
+let time = 0; // Starts exactly at Sunrise
 
 const sun = new THREE.DirectionalLight(0xffffff, 1);
 sun.castShadow = true;
@@ -33,6 +33,8 @@ function updateLighting() {
     scene.fog = new THREE.FogExp2(currentColor, 0.015);
     sun.intensity = lerpFactor;
     ambient.intensity = Math.max(0.02, lerpFactor * 0.4);
+
+    return sunY > 0; // Return true if it is daytime
 }
 
 // --- 3. PLAYER, SMOOTH FLASHLIGHT & BATTERY ---
@@ -50,31 +52,36 @@ player.add(lightTarget);
 flashlight.target = lightTarget;
 flashlight.visible = false;
 
-// Battery State
+// Battery State Logic
 let batteryLevel = 100;
-const batteryDrainRate = 0.05; // Amount per frame
-const batteryBar = document.getElementById('battery-bar');
-const batteryText = document.getElementById('battery-text');
+const drainRate = 0.08; 
+const rechargeRate = 0.04; 
 
-function updateBattery() {
-    if (flashlight.visible && batteryLevel > 0) {
-        batteryLevel -= batteryDrainRate;
-    } else if (batteryLevel <= 0) {
-        flashlight.visible = false;
+function updateBattery(isDaytime) {
+    if (flashlight.visible) {
+        batteryLevel -= drainRate;
+    } else if (isDaytime && batteryLevel < 100) {
+        // Solar recharge during the day when light is off
+        batteryLevel += rechargeRate;
     }
+
+    batteryLevel = THREE.MathUtils.clamp(batteryLevel, 0, 100);
     
-    // Update UI
-    const displayLevel = Math.max(0, Math.floor(batteryLevel));
-    batteryBar.style.width = displayLevel + '%';
-    batteryText.innerText = `Battery: ${displayLevel}%`;
+    if (batteryLevel <= 0) flashlight.visible = false;
+
+    // UI Updates
+    const bar = document.getElementById('battery-bar');
+    const text = document.getElementById('battery-text');
+    bar.style.width = batteryLevel + '%';
+    text.innerText = `Battery: ${Math.floor(batteryLevel)}%`;
     
-    // Color change based on level
-    if (displayLevel < 20) batteryBar.style.background = '#ff0000';
-    else if (displayLevel < 50) batteryBar.style.background = '#ffff00';
-    else batteryBar.style.background = '#00ff00';
+    // UI Color Logic
+    if (batteryLevel < 25) bar.style.background = "#ff4d4d";
+    else if (batteryLevel < 60) bar.style.background = "#ffd11a";
+    else bar.style.background = "#00ff88";
 }
 
-// --- 4. MOVEMENT & MOUSE LOOK ---
+// --- 4. MOVEMENT & MOUSE ---
 let pitch = 0, yaw = 0; 
 document.addEventListener('click', () => renderer.domElement.requestPointerLock());
 document.addEventListener('mousemove', (e) => {
@@ -110,7 +117,7 @@ function createChunk(x, z) {
     chunks.set(key, mesh);
 }
 
-// --- 6. CONTROLS & ANIMATION ---
+// --- 6. GAME LOOP ---
 const keys = { w: false, a: false, s: false, d: false };
 window.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'f' && batteryLevel > 0) flashlight.visible = !flashlight.visible;
@@ -130,22 +137,19 @@ function animate() {
     if (keys.a) { player.position.x -= Math.cos(rot) * speed; player.position.z += Math.sin(rot) * speed; }
     if (keys.d) { player.position.x += Math.cos(rot) * speed; player.position.z -= Math.sin(rot) * speed; }
 
-    updateLighting();
-    updateBattery();
+    const isDay = updateLighting();
+    updateBattery(isDay);
     
-    // Chunking
     const pX = Math.round(player.position.x / chunkSize);
     const pZ = Math.round(player.position.z / chunkSize);
     for (let x = pX - 2; x <= pX + 2; x++) {
         for (let z = pZ - 2; z <= pZ + 2; z++) createChunk(x, z);
     }
 
-    // Ground Height
     raycaster.set(new THREE.Vector3(player.position.x, 100, player.position.z), new THREE.Vector3(0, -1, 0));
     const hit = raycaster.intersectObjects(terrainGroup.children);
     if (hit.length > 0) player.position.y = hit[0].point.y + 1;
 
-    // Camera
     const camOffset = new THREE.Vector3(0, 5, 12).applyQuaternion(player.quaternion);
     camera.position.copy(player.position).add(camOffset);
     camera.lookAt(player.position.x, player.position.y + pitch * 5, player.position.z);

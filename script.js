@@ -91,7 +91,17 @@ function createTree(x, y, z) {
     return treeGroup;
 }
 
-// --- 6. INFINITE TERRAIN ENGINE ---
+// --- 6. WATER & INFINITE TERRAIN ENGINE ---
+const waterLevel = -1.5;
+const waterGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
+const waterMat = new THREE.MeshStandardMaterial({ 
+    color: 0x0077be, 
+    transparent: true, 
+    opacity: 0.6,
+    roughness: 0.1,
+    metalness: 0.5
+});
+
 const terrainGroup = new THREE.Group();
 scene.add(terrainGroup);
 const chunks = new Map();
@@ -104,6 +114,8 @@ function createChunk(x, z) {
     if (chunks.has(key)) return;
 
     const chunkGroup = new THREE.Group();
+    
+    // 1. Terrain Mesh
     const geo = new THREE.PlaneGeometry(chunkSize, chunkSize, 20, 20);
     const v = geo.attributes.position.array;
     for (let i = 0; i < v.length; i += 3) {
@@ -115,7 +127,13 @@ function createChunk(x, z) {
     mesh.receiveShadow = true;
     chunkGroup.add(mesh);
 
-    // Add Trees to Chunk
+    // 2. Water Plane for this chunk
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = waterLevel;
+    chunkGroup.add(water);
+
+    // 3. Tree Spawning (Avoid Water)
     for (let i = 0; i < 15; i++) {
         const tx = (Math.random() - 0.5) * chunkSize;
         const tz = (Math.random() - 0.5) * chunkSize;
@@ -123,8 +141,8 @@ function createChunk(x, z) {
         const worldZ = tz + (z * chunkSize);
         const ty = getHeight(worldX, worldZ);
         
-        // Only grow trees on higher ground (above "water" level if you had any)
-        if (ty > -2) {
+        // Only grow trees if the ground is above water level + 0.5
+        if (ty > waterLevel + 0.5) {
             chunkGroup.add(createTree(tx, ty, tz));
         }
     }
@@ -190,6 +208,31 @@ function animate() {
         if (player.position.y <= ground) { player.position.y = ground; velocityY = 0; canJump = true; }
     }
 
+    // Wave Animation
+    waterMat.opacity = 0.6 + Math.sin(performance.now() * 0.001) * 0.05;
+
+    // Grounding & Swimming Physics
+    raycaster.set(new THREE.Vector3(player.position.x, player.position.y + 10, player.position.z), new THREE.Vector3(0, -1, 0));
+    const hit = raycaster.intersectObjects(terrainGroup.children, true);
+    if (hit.length > 0) {
+        // Find the terrain mesh (not water or trees) in the hit results
+        const terrainHit = hit.find(h => h.object.geometry.type === "PlaneGeometry" && h.object.material.color.getHex() === 0x348C31);
+        
+        if (terrainHit) {
+            const ground = terrainHit.point.y + 1.5;
+            
+            // If we are below water level, slow down (Swimming)
+            const isSwimming = player.position.y < waterLevel + 1.2;
+            const currentSpeed = isSwimming ? 0.3 : 0.7;
+
+            if (player.position.y <= ground) {
+                player.position.y = ground;
+                velocityY = 0;
+                canJump = true;
+            }
+        }
+    }
+    
     // Load Chunks
     const pX = Math.round(player.position.x / chunkSize), pZ = Math.round(player.position.z / chunkSize);
     for (let x = pX - 2; x <= pX + 2; x++) for (let z = pZ - 2; z <= pZ + 2; z++) createChunk(x, z);

@@ -190,7 +190,7 @@ function animate() {
     if (keys.d) { player.position.x += Math.cos(rot) * speed; player.position.z -= Math.sin(rot) * speed; }
 
     // Physics
-    velocityY -= 0.02;
+    velocityY -= 0.5;
     player.position.y += velocityY;
 
     // Grounding

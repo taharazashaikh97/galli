@@ -3,7 +3,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true; // Enable shadows for the flashlight
+renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
@@ -13,7 +13,7 @@ const daySpeed = (Math.PI * 2) / (dayDurationSeconds * 60);
 let time = 0; 
 
 const sun = new THREE.DirectionalLight(0xffffff, 1);
-sun.castShadow = true; // Sun creates shadows during day
+sun.castShadow = true;
 scene.add(sun);
 const ambient = new THREE.AmbientLight(0x404040, 0.2);
 scene.add(ambient);
@@ -33,44 +33,50 @@ function updateLighting() {
     sun.intensity = lerpFactor;
 }
 
-// --- 3. THE "PERFECT" FLASHLIGHT & PLAYER ---
+// --- 3. PLAYER & BETTER FLASHLIGHT ---
 const player = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshLambertMaterial({ color: 0xe63946 }));
 player.castShadow = true;
 scene.add(player);
 
-// Enhanced Spotlight: Added penumbra (soft edges) and decay
-const flashlight = new THREE.SpotLight(0xfff9d4, 10, 80, Math.PI / 5, 0.4, 1.5);
-flashlight.position.set(0, 0.5, 0); 
+// Flashlight setup
+const flashlight = new THREE.SpotLight(0xfff9d4, 12, 100, Math.PI / 5, 0.3, 1);
 flashlight.castShadow = true;
-flashlight.shadow.mapSize.width = 1024;
-flashlight.shadow.mapSize.height = 1024;
+flashlight.shadow.mapSize.width = 2048; // Higher res shadows
+flashlight.shadow.mapSize.height = 2048;
 
 const lightTarget = new THREE.Object3D();
-lightTarget.position.set(0, 0.5, -10); 
+lightTarget.position.set(0, 0, -10); // Pointing forward
 player.add(flashlight);
 player.add(lightTarget);
 flashlight.target = lightTarget;
 flashlight.visible = false;
 
-// --- 4. PHYSICS & JUMP CONSTANTS ---
+// --- 4. MOVEMENT & PHYSICS ---
 let velocityY = 0;
-const gravity = -0.015;
-const jumpStrength = 0.4;
+const gravity = -0.02;
+const jumpStrength = 0.5;
 let canJump = false;
-
-// Mouse Look
 let pitch = 0, yaw = 0;
+
+const keys = { w: false, a: false, s: false, d: false };
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && canJump) velocityY = jumpStrength;
+    if (e.key.toLowerCase() === 'f') flashlight.visible = !flashlight.visible;
+    keys[e.key.toLowerCase()] = true;
+});
+window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
 document.addEventListener('click', () => renderer.domElement.requestPointerLock());
 document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === renderer.domElement) {
-        yaw -= e.movementX * 0.002;
-        pitch -= e.movementY * 0.002;
+        yaw -= e.movementX * 0.003;
+        pitch -= e.movementY * 0.003;
         pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
         player.rotation.y = yaw;
     }
 });
 
-// --- 5. TERRAIN ENGINE ---
+// --- 5. INFINITE TERRAIN ---
 const terrainGroup = new THREE.Group();
 scene.add(terrainGroup);
 const chunks = new Map();
@@ -89,64 +95,65 @@ function createChunk(x, z) {
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x348C31 }));
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x * chunkSize, 0, z * chunkSize);
-    mesh.receiveShadow = true; // Chunks show shadows
+    mesh.receiveShadow = true;
     terrainGroup.add(mesh);
     chunks.set(key, mesh);
 }
 
-// --- 6. CONTROLS ---
-const keys = { w: false, a: false, s: false, d: false };
-window.addEventListener('keydown', (e) => {
-    if (e.key === ' ') { if(canJump) velocityY = jumpStrength; }
-    if (e.key.toLowerCase() === 'f') flashlight.visible = !flashlight.visible;
-    keys[e.key.toLowerCase()] = true;
-});
-window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
-
 const raycaster = new THREE.Raycaster();
 
+// --- 6. CORE LOOP ---
 function animate() {
     requestAnimationFrame(animate);
 
-    // Movement Logic
-    const speed = 0.6;
+    // FIXED MOVEMENT SYSTEM
+    const moveSpeed = 0.8; // Fast movement
+    const dirX = Math.sin(player.rotation.y);
+    const dirZ = Math.cos(player.rotation.y);
+
     if (keys.w) {
-        player.position.x -= Math.sin(player.rotation.y) * speed;
-        player.position.z -= Math.cos(player.rotation.y) * speed;
+        player.position.x -= dirX * moveSpeed;
+        player.position.z -= dirZ * moveSpeed;
     }
     if (keys.s) {
-        player.position.x += Math.sin(player.rotation.y) * speed;
-        player.position.z += Math.cos(player.rotation.y) * speed;
+        player.position.x += dirX * moveSpeed;
+        player.position.z += dirZ * moveSpeed;
+    }
+    // STRAFING (A & D Fixed)
+    if (keys.a) {
+        player.position.x -= Math.sin(player.rotation.y + Math.PI / 2) * moveSpeed;
+        player.position.z -= Math.cos(player.rotation.y + Math.PI / 2) * moveSpeed;
+    }
+    if (keys.d) {
+        player.position.x += Math.sin(player.rotation.y + Math.PI / 2) * moveSpeed;
+        player.position.z += Math.cos(player.rotation.y + Math.PI / 2) * moveSpeed;
     }
 
-    // --- JUMP & GRAVITY PHYSICS ---
+    // Gravity and Grounding
     velocityY += gravity;
     player.position.y += velocityY;
 
-    // Ground Collision
-    raycaster.set(new THREE.Vector3(player.position.x, player.position.y + 5, player.position.z), new THREE.Vector3(0, -1, 0));
+    raycaster.set(new THREE.Vector3(player.position.x, player.position.y + 10, player.position.z), new THREE.Vector3(0, -1, 0));
     const hit = raycaster.intersectObjects(terrainGroup.children);
     if (hit.length > 0) {
-        const groundHeight = hit[0].point.y + 1.5; // Offset for player height
+        const groundHeight = hit[0].point.y + 1.5;
         if (player.position.y <= groundHeight) {
             player.position.y = groundHeight;
             velocityY = 0;
             canJump = true;
-        } else {
-            canJump = false;
         }
     }
 
     updateLighting();
     
-    // Chunk Management
+    // Endless World Management
     const pX = Math.round(player.position.x / chunkSize);
     const pZ = Math.round(player.position.z / chunkSize);
     for (let x = pX - 2; x <= pX + 2; x++) {
         for (let z = pZ - 2; z <= pZ + 2; z++) createChunk(x, z);
     }
 
-    // Camera follow (Smoothed looking)
+    // Third-person camera positioning
     const camOffset = new THREE.Vector3(0, 5, 12).applyQuaternion(player.quaternion);
     camera.position.copy(player.position).add(camOffset);
     camera.lookAt(player.position.x, player.position.y + pitch * 5, player.position.z);

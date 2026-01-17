@@ -1,6 +1,6 @@
 /**
- * INFINITE OPEN WORLD - FULL ENGINE
- * Controls: WASD to Move, Mouse to Look, F for Flashlight, Space to Jump
+ * OPEN WORLD ENGINE: "Morning Mist"
+ * Features: Infinite Terrain, Forests, Lakes, Day/Night Cycle, Battery System, FPS Counter
  */
 
 // --- 1. INITIAL SETUP ---
@@ -35,7 +35,7 @@ scene.add(ambient);
 // --- 3. TIME & LIGHTING ---
 const dayDurationSeconds = 15 * 60; 
 const daySpeed = (Math.PI * 2) / (dayDurationSeconds * 60); 
-let time = 0; 
+let time = 0; // Start at Sunrise
 const orbitRadius = 900;
 
 function updateLighting() {
@@ -49,7 +49,7 @@ function updateLighting() {
     return sunY > 0;
 }
 
-// --- 4. PLAYER & FLASHLIGHT ---
+// --- 4. PLAYER & SMOOTH FLASHLIGHT ---
 const player = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshLambertMaterial({ color: 0xe63946 }));
 player.castShadow = true;
 scene.add(player);
@@ -63,59 +63,36 @@ player.add(flashlight); player.add(lightTarget);
 flashlight.target = lightTarget;
 flashlight.visible = false;
 
-// --- 5. TREE GENERATOR ---
+// --- 5. FORESTS & WATER ASSETS ---
+const waterLevel = -1.5;
+const waterMat = new THREE.MeshStandardMaterial({ 
+    color: 0x0077be, transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0.5 
+});
+
 function createTree(x, y, z) {
     const treeGroup = new THREE.Group();
-    
-    // Trunk
-    const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.2, 0.2, 1.5),
-        new THREE.MeshStandardMaterial({ color: 0x4b3621 })
-    );
-    trunk.position.y = 0.75;
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-    treeGroup.add(trunk);
-
-    // Leaves
-    const leaves = new THREE.Mesh(
-        new THREE.ConeGeometry(1.2, 3, 8),
-        new THREE.MeshStandardMaterial({ color: 0x0b5345 })
-    );
-    leaves.position.y = 2.5;
-    leaves.castShadow = true;
-    leaves.receiveShadow = true;
-    treeGroup.add(leaves);
-
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.5), new THREE.MeshStandardMaterial({ color: 0x4b3621 }));
+    trunk.position.y = 0.75; trunk.castShadow = true;
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.2, 3, 8), new THREE.MeshStandardMaterial({ color: 0x0b5345 }));
+    leaves.position.y = 2.5; leaves.castShadow = true;
+    treeGroup.add(trunk); treeGroup.add(leaves);
     treeGroup.position.set(x, y, z);
     return treeGroup;
 }
 
-// --- 6. WATER & INFINITE TERRAIN ENGINE ---
-const waterLevel = -1.5;
-const waterGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
-const waterMat = new THREE.MeshStandardMaterial({ 
-    color: 0x0077be, 
-    transparent: true, 
-    opacity: 0.6,
-    roughness: 0.1,
-    metalness: 0.5
-});
-
+// --- 6. INFINITE TERRAIN ENGINE ---
 const terrainGroup = new THREE.Group();
 scene.add(terrainGroup);
 const chunks = new Map();
 const chunkSize = 100;
-
 const getHeight = (x, z) => Math.sin(x * 0.04) * Math.cos(z * 0.04) * 8 + Math.sin(x * 0.1) * 2;
 
 function createChunk(x, z) {
     const key = `${x},${z}`;
     if (chunks.has(key)) return;
-
     const chunkGroup = new THREE.Group();
     
-    // 1. Terrain Mesh
+    // Terrain
     const geo = new THREE.PlaneGeometry(chunkSize, chunkSize, 20, 20);
     const v = geo.attributes.position.array;
     for (let i = 0; i < v.length; i += 3) {
@@ -127,24 +104,18 @@ function createChunk(x, z) {
     mesh.receiveShadow = true;
     chunkGroup.add(mesh);
 
-    // 2. Water Plane for this chunk
-    const water = new THREE.Mesh(waterGeo, waterMat);
+    // Water
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(chunkSize, chunkSize), waterMat);
     water.rotation.x = -Math.PI / 2;
     water.position.y = waterLevel;
     chunkGroup.add(water);
 
-    // 3. Tree Spawning (Avoid Water)
-    for (let i = 0; i < 15; i++) {
+    // Forest
+    for (let i = 0; i < 12; i++) {
         const tx = (Math.random() - 0.5) * chunkSize;
         const tz = (Math.random() - 0.5) * chunkSize;
-        const worldX = tx + (x * chunkSize);
-        const worldZ = tz + (z * chunkSize);
-        const ty = getHeight(worldX, worldZ);
-        
-        // Only grow trees if the ground is above water level + 0.5
-        if (ty > waterLevel + 0.5) {
-            chunkGroup.add(createTree(tx, ty, tz));
-        }
+        const ty = getHeight(tx + (x * chunkSize), tz + (z * chunkSize));
+        if (ty > waterLevel + 0.5) chunkGroup.add(createTree(tx, ty, tz));
     }
 
     chunkGroup.position.set(x * chunkSize, 0, z * chunkSize);
@@ -153,18 +124,16 @@ function createChunk(x, z) {
 }
 
 // --- 7. SYSTEMS & CONTROLS ---
-let batteryLevel = 100;
-let lastTime = performance.now(), frameCount = 0;
+let batteryLevel = 100, lastTime = performance.now(), frameCount = 0;
 let velocityY = 0, canJump = false, pitch = 0, yaw = 0;
-
 const keys = { w: false, a: false, s: false, d: false };
+
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && canJump) velocityY = 0.5;
     if (e.key.toLowerCase() === 'f' && batteryLevel > 0) flashlight.visible = !flashlight.visible;
     keys[e.key.toLowerCase()] = true;
 });
 window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
-
 document.addEventListener('click', () => renderer.domElement.requestPointerLock());
 document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === renderer.domElement) {
@@ -179,7 +148,7 @@ const raycaster = new THREE.Raycaster();
 function animate() {
     requestAnimationFrame(animate);
 
-    // FPS & Battery logic
+    // FPS & Battery
     frameCount++;
     const now = performance.now();
     if (now >= lastTime + 1000) {
@@ -189,11 +158,12 @@ function animate() {
     const isDay = updateLighting();
     if (flashlight.visible) batteryLevel -= 0.08;
     else if (isDay && batteryLevel < 100) batteryLevel += 0.04;
-    batteryLevel = Math.max(0, Math.min(100, batteryLevel));
+    batteryLevel = Math.max(0, 100, batteryLevel);
     document.getElementById('battery-bar').style.width = batteryLevel + '%';
 
-    // Movement & Gravity
-    const speed = 0.7;
+    // Physics & Swimming
+    const isSwimming = player.position.y < waterLevel + 1.2;
+    const speed = isSwimming ? 0.3 : 0.7;
     if (keys.w) { player.position.x -= Math.sin(yaw) * speed; player.position.z -= Math.cos(yaw) * speed; }
     if (keys.s) { player.position.x += Math.sin(yaw) * speed; player.position.z += Math.cos(yaw) * speed; }
     if (keys.a) { player.position.x -= Math.cos(yaw) * speed; player.position.z += Math.sin(yaw) * speed; }
@@ -202,37 +172,13 @@ function animate() {
 
     // Grounding
     raycaster.set(new THREE.Vector3(player.position.x, player.position.y + 10, player.position.z), new THREE.Vector3(0, -1, 0));
-    const hit = raycaster.intersectObjects(terrainGroup.children, true);
-    if (hit.length > 0) {
-        const ground = hit[0].point.y + 1.5;
+    const hits = raycaster.intersectObjects(terrainGroup.children, true);
+    const groundHit = hits.find(h => h.object.material.color && h.object.material.color.getHex() === 0x348C31);
+    if (groundHit) {
+        const ground = groundHit.point.y + 1.5;
         if (player.position.y <= ground) { player.position.y = ground; velocityY = 0; canJump = true; }
     }
 
-    // Wave Animation
-    waterMat.opacity = 0.6 + Math.sin(performance.now() * 0.001) * 0.05;
-
-    // Grounding & Swimming Physics
-    raycaster.set(new THREE.Vector3(player.position.x, player.position.y + 10, player.position.z), new THREE.Vector3(0, -1, 0));
-    const hit = raycaster.intersectObjects(terrainGroup.children, true);
-    if (hit.length > 0) {
-        // Find the terrain mesh (not water or trees) in the hit results
-        const terrainHit = hit.find(h => h.object.geometry.type === "PlaneGeometry" && h.object.material.color.getHex() === 0x348C31);
-        
-        if (terrainHit) {
-            const ground = terrainHit.point.y + 1.5;
-            
-            // If we are below water level, slow down (Swimming)
-            const isSwimming = player.position.y < waterLevel + 1.2;
-            const currentSpeed = isSwimming ? 0.3 : 0.7;
-
-            if (player.position.y <= ground) {
-                player.position.y = ground;
-                velocityY = 0;
-                canJump = true;
-            }
-        }
-    }
-    
     // Load Chunks
     const pX = Math.round(player.position.x / chunkSize), pZ = Math.round(player.position.z / chunkSize);
     for (let x = pX - 2; x <= pX + 2; x++) for (let z = pZ - 2; z <= pZ + 2; z++) createChunk(x, z);

@@ -7,15 +7,22 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="ui">
-    <div id="battery-container" style="width: 7px; height: 50px; border: 2px solid white; border-radius: 3px; margin-top: 10px; background: rgba(0,0,0,0.5);">
-        <div id="battery-bar" style="width: 100%; height: 100%; background: #00ff00; transition: height 0.05s;"></div>
+<div id="ui" style="position: absolute; top: 20px; left: 20px; color: white; font-family: monospace; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; pointer-events: auto; z-index: 100;">
+    <p style="margin: 0 0 10px 0;"><strong>WASD</strong> Move | <strong>F</strong> Flashlight</p>
+    
+    <div style="margin-bottom: 10px;">
+        <label>Time of Day:</label><br>
+        <input type="range" id="time-slider" min="0" max="6.28" step="0.01" style="width: 100%;">
+        <span id="time-label">Mid-day</span>
     </div>
-    <p id="battery-text" style="margin: 5px 0 0 0; font-size: 12px;">Battery: 100%</p>
+
+    <div id="battery-container" style="width: 200px; height: 10px; border: 1px solid #fff; background: #222;">
+        <div id="battery-bar" style="width: 100%; height: 100%; background: #00ff00;"></div>
+    </div>
+    <p id="battery-text" style="margin: 5px 0 0 0; font-size: 10px;">BATTERY: 100%</p>
 </div>
-    <div id="fps-counter" style="position: absolute; top: 10px; right: 10px; color: #00ff00; font-family: monospace; font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 3px; pointer-events: none; z-index: 100;">
-    FPS: 60
-</div>
+
+<div id="fps-counter" style="position: absolute; top: 10px; right: 10px; color: #00ff00; font-family: monospace; background: rgba(0,0,0,0.5); padding: 5px;">FPS: 60</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script type="module" src="script.js"></script>

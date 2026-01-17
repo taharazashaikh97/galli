@@ -7,6 +7,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
 document.body.appendChild(renderer.domElement);
 
+let lastTime = performance.now();
+let frameCount = 0;
+const fpsDisplay = document.getElementById('fps-counter');
+
 // --- 2. 15-MINUTE DAY/NIGHT CYCLE (Start: Morning) ---
 const dayDurationSeconds = 15 * 60; 
 const daySpeed = (Math.PI * 2) / (dayDurationSeconds * 60); 
@@ -130,6 +134,15 @@ const raycaster = new THREE.Raycaster();
 function animate() {
     requestAnimationFrame(animate);
 
+// --- FPS CALCULATOR ---
+    frameCount++;
+    const currentTime = performance.now();
+    if (currentTime >= lastTime + 1000) {
+        fpsDisplay.innerText = `FPS: ${frameCount}`;
+        frameCount = 0;
+        lastTime = currentTime;
+    }
+    
     const speed = 0.7;
     const rot = player.rotation.y;
     if (keys.w) { player.position.x -= Math.sin(rot) * speed; player.position.z -= Math.cos(rot) * speed; }
